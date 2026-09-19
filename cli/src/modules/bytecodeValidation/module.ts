@@ -1,0 +1,142 @@
+import { getAddress, type Address } from "viem";
+import type { IBytecodeValidatorAdapter } from "../../adapters/IBytecodeValidatorAdapter/interface";
+import type { IRPCAdapter } from "../../adapters/IRPCAdapter/interface";
+import type { ComposeContext, ModuleState } from "../../context/types";
+import { DIAMOND_LOUPE_ABI } from "../inspect/diamondLoupeAbi";
+import type { VirtualStorageLayoutRecord } from "../validation/types";
+import type {
+  BytecodeValidationSummary,
+  DeploymentBytecodeValidationResult,
+} from "./types";
+
+type DeploymentDependencies = {
+  rpc: IRPCAdapter;
+  validator: IBytecodeValidatorAdapter;
+};
+
+type LoupeFacet = {
+  facet: Address;
+  functionSelectors: `0x${string}`[];
+};
+
+function storageRecords(ctx: ComposeContext): VirtualStorageLayoutRecord[] {
+  return (ctx.param.virtualStorageRecords as VirtualStorageLayoutRecord[] | undefined) ?? [];
+}
+
+function validatorRecords(records: VirtualStorageLayoutRecord[]) {
+  return records.map((record) => ({
+    ...record,
+    structName: record.structName ?? undefined,
+  }));
+}
+
+/** Validates all current facets of one deployed diamond at one pinned block. */
+export const BytecodeValidationModule = {
+  async validateDeployment(
+    ctx: ComposeContext,
+    dependencies: DeploymentDependencies,
+  ): Promise<ComposeContext> {
+    const diamondName = String(ctx.param.diamondName);
+    const chainKey = String(ctx.param.chainKey);
+    const diamondAddress = getAddress(String(ctx.param.diamondAddress));
+    const blockNumber = await dependencies.rpc.getBlockNumber();
+    const rawFacets = await dependencies.rpc.readContract<LoupeFacet[]>({
+      address: diamondAddress,
+      abi: DIAMOND_LOUPE_ABI,
+      functionName: "facets",
+      blockNumber,
+    }, { verifyCode: true });
+    const facetAddresses = [...new Set(rawFacets.map((facet) => getAddress(facet.facet)))];
+    const records = validatorRecords(storageRecords(ctx));
+    const facets = [];
+
+    for (const address of facetAddresses) {
+      try {
+        const bytecode = await dependencies.rpc.getCode(address, blockNumber);
+        if (!bytecode || bytecode === "0x") {
+          facets.push({
+            address,
+            report: null,
+            warning: `No runtime bytecode found at ${address}.`,
+            error: null,
+          });
+          continue;
+        }
+
+        facets.push({
+          address,
+          report: dependencies.validator.validate({
+            bytecode,
+            virtualStorageLayout: { records },
+          }),
+          warning: null,
+          error: null,
+        });
+      } catch (error) {
+        facets.push({
+          address,
+          report: null,
+          warning: null,
+          error: error instanceof Error ? error.message : "Facet bytecode validation failed.",
+        });
+      }
+    }
+
+    const result: DeploymentBytecodeValidationResult = {
+      diamondName,
+      chainKey,
+      diamondAddress,
+      blockNumber,
+      facets,
+    };
+    const collisions = facets.flatMap((facet) => facet.report?.collisions ?? []);
+    const facetErrors = facets.filter((facet) => facet.error);
+    const success = collisions.length === 0 && facetErrors.length === 0;
+    ctx.state.bytecodeDeploymentValidation = {
+      success,
+      result,
+      error: success
+        ? null
+        : {
+            code: collisions.length > 0
+              ? "BYTECODE_STORAGE_COLLISION_DETECTED"
+              : "BYTECODE_FACET_VALIDATION_FAILED",
+            message: collisions.length > 0
+              ? "Deployed facet bytecode contradicts the diamond storage layout."
+              : "One or more deployed facets could not be validated.",
+            nativeError: null,
+          },
+    };
+    return ctx;
+  },
+
+  mergeDeployments(
+    ctx: ComposeContext,
+    children: ComposeContext[],
+    skipped = false,
+  ): ComposeContext {
+    const deployments = children.map((child) =>
+      child.state.bytecodeDeploymentValidation as ModuleState<DeploymentBytecodeValidationResult>);
+    const failed = deployments.find((deployment) => !deployment.success);
+    const result: BytecodeValidationSummary = {
+      skipped,
+      deployments: deployments.flatMap((deployment) => deployment.result ? [deployment.result] : []),
+      failures: children.flatMap((child, index) => {
+        const deployment = deployments[index];
+        if (deployment.success || deployment.result) return [];
+        return [{
+          diamondName: String(child.param.diamondName),
+          chainKey: String(child.param.chainKey),
+          diamondAddress: String(child.param.diamondAddress),
+          message: deployment.error?.message ?? "Bytecode validation failed.",
+        }];
+      }),
+    };
+    ctx.state.bytecodeValidation = {
+      success: !failed,
+      result,
+      error: failed?.error ?? null,
+    };
+    return ctx;
+  },
+};

@@ -65,9 +65,17 @@ export async function createRPCAdapter(options: RPCAdapterOptions): Promise<IRPC
    * @returns Deployed bytecode, or `undefined` when no bytecode exists.
    * @throws {RPCAdapterError} If the RPC request fails.
    */
-  async function getCode(address: Address): Promise<Hex | undefined> {
+  async function getBlockNumber(): Promise<bigint> {
     try {
-      return await retryRPC(() => client.getCode({ address }));
+      return await retryRPC(() => client.getBlockNumber());
+    } catch (error) {
+      throw requestError("getBlockNumber", options.chainId, error);
+    }
+  }
+
+  async function getCode(address: Address, blockNumber?: bigint): Promise<Hex | undefined> {
+    try {
+      return await retryRPC(() => client.getCode({ address, blockNumber }));
     } catch (error) {
       throw requestError("getCode", options.chainId, error);
     }
@@ -89,7 +97,7 @@ export async function createRPCAdapter(options: RPCAdapterOptions): Promise<IRPC
             chainId: options.chainId,
           });
         }
-        const code = await getCode(getAddress(parameters.address));
+        const code = await getCode(getAddress(parameters.address), parameters.blockNumber);
         if (!code || code === "0x") {
           throw new RPCAdapterError("RPC_CONTRACT_NOT_FOUND", `No contract code found at ${parameters.address}`, {
             operation: "readContract",
@@ -105,6 +113,7 @@ export async function createRPCAdapter(options: RPCAdapterOptions): Promise<IRPC
   }
 
   return {
+    getBlockNumber,
     readContract,
     getCode,
   };
