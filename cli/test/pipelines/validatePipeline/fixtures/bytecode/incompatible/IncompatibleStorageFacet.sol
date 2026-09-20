@@ -10,7 +10,7 @@ contract IncompatibleStorageFacet {
         address nonce;
     }
 
-    /// @custom:storage-location erc8042:compose.e2e.storage
+    /** @custom:storage-location erc8042:compose.e2e.storage */
     struct Storage {
         address value;
         uint256 account;
