@@ -26,6 +26,7 @@ function storageRecords(ctx: ComposeContext): VirtualStorageLayoutRecord[] {
 function validatorRecords(records: VirtualStorageLayoutRecord[]) {
   return records.map((record) => ({
     ...record,
+    parentVirtualPath: record.parentVirtualPath ?? undefined,
     structName: record.structName ?? undefined,
   }));
 }
