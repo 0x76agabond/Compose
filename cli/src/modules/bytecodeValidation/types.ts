@@ -4,7 +4,7 @@ import type { BytecodeValidationReport } from "../../adapters/IBytecodeValidator
 export type FacetBytecodeValidationResult = {
   address: Address;
   report: BytecodeValidationReport | null;
-  warning: string | null;
+  uncertain: string | null;
   error: string | null;
 };
 
@@ -13,11 +13,14 @@ export type DeploymentBytecodeValidationResult = {
   chainKey: string;
   diamondAddress: Address;
   blockNumber: bigint;
+  complete: boolean;
+  introspectionError: string | null;
   facets: FacetBytecodeValidationResult[];
 };
 
 export type BytecodeValidationSummary = {
   skipped: boolean;
+  complete: boolean;
   deployments: DeploymentBytecodeValidationResult[];
   failures: Array<{
     diamondName: string;

@@ -24,6 +24,7 @@ type BroadcastTransaction = {
 };
 
 export type BytecodeE2EHarness = {
+  canonicalFacetAddress: string;
   diamondAddress: string;
   rpcUrl: string;
   createValidationProject(variant: "compatible" | "incompatible"): Promise<string>;
@@ -194,8 +195,13 @@ export async function createBytecodeE2EHarness(): Promise<BytecodeE2EHarness> {
     const diamondTransaction = deployments.get("Diamond");
     if (!diamondTransaction?.contractAddress) throw new Error("Diamond address missing from Foundry broadcast.");
     const diamondAddress = diamondTransaction.contractAddress;
+    const canonicalFacetAddress = deployments.get("CanonicalStorageFacet")?.contractAddress;
+    if (!canonicalFacetAddress) {
+      throw new Error("Canonical storage facet address missing from Foundry broadcast.");
+    }
 
     return {
+      canonicalFacetAddress,
       diamondAddress,
       rpcUrl,
       async createValidationProject(variant) {

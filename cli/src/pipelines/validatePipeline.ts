@@ -11,6 +11,7 @@ import type { LockFileState } from "../modules/lockFile/types";
 import { BytecodeValidationPipeline } from "./bytecodeValidationPipeline";
 import { BytecodeValidationModule } from "../modules/bytecodeValidation/module";
 import { showBytecodeValidationReport } from "../modules/bytecodeValidation/output";
+import type { BytecodeValidationSummary } from "../modules/bytecodeValidation/types";
 import type { VirtualStorageLayoutResult } from "../modules/validation/types";
 
 /** Runs source-side validation directly from compiler AST output. */
@@ -99,7 +100,9 @@ export const ValidatePipeline = {
       ctx = BytecodeValidationModule.mergeDeployments(ctx, [], true);
     }
 
-    const bytecodeValidation = ctx.state.bytecodeValidation as ModuleState | undefined;
+    const bytecodeValidation = ctx.state.bytecodeValidation as
+      | ModuleState<BytecodeValidationSummary>
+      | undefined;
     const pipelineError = selectorCollisions?.error
       ?? virtualStorageLayout?.error
       ?? bytecodeValidation?.error
@@ -125,7 +128,11 @@ export const ValidatePipeline = {
     showBytecodeValidationReport(ctx);
 
     if (ctx.state.validatePipeline.success) {
-      ValidationModule.showSuccess();
+      if (bytecodeValidation?.result?.complete === false) {
+        ValidationModule.showIncomplete();
+      } else {
+        ValidationModule.showSuccess();
+      }
     }
 
     return ctx;

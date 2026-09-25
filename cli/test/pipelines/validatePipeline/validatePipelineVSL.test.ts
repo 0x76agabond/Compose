@@ -72,7 +72,7 @@ describe("validate pipeline", () => {
     }
   }, 30_000);
 
-  it("validates Loupe facets against the diamond VSL without blocking warnings", async () => {
+  it("validates introspected facets against the diamond VSL without blocking warnings", async () => {
     const harness = await createValidatePipelineHarness([
       "FullStorageFacet",
       "CompatibleStorageFacet",
@@ -113,6 +113,51 @@ describe("validate pipeline", () => {
       expect(rpc.getCode).toHaveBeenCalledWith(facetAddress, 100n);
       expect(warnings.mock.calls.flat().map(String)).toContain(
         "\u001b[33m  Scoped evidence is incomplete.\u001b[39m",
+      );
+    } finally {
+      resolver.mockRestore();
+      warnings.mockRestore();
+      logs.mockRestore();
+      await harness.cleanup();
+    }
+  }, 30_000);
+
+  it("completes with warnings when an introspected facet has no runtime bytecode", async () => {
+    const harness = await createValidatePipelineHarness([
+      "FullStorageFacet",
+      "CompatibleStorageFacet",
+    ]);
+    await harness.writeLock({ StorageDiamond: { local: deployment() } });
+    const { rpc, validator } = bytecodeDependencies(emptyReport());
+    vi.mocked(rpc.getCode).mockResolvedValue("0x");
+    const originalResolve = DependencyResolver.resolve.bind(DependencyResolver);
+    const resolver = vi.spyOn(DependencyResolver, "resolve").mockImplementation(async (requests) => {
+      if (requests.some((request) => request.key === DependencyKey.BytecodeValidator)) {
+        return {
+          [DependencyKey.RPC]: rpc,
+          [DependencyKey.BytecodeValidator]: validator,
+        };
+      }
+      return originalResolve(requests);
+    });
+    const warnings = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const logs = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    try {
+      const result = await ValidatePipeline.execute(harness.ctx);
+      expect(result.state.validatePipeline?.success).toBe(true);
+      expect(result.state.bytecodeValidation).toMatchObject({
+        success: true,
+        result: { complete: false },
+      });
+      expect(validator.validate).not.toHaveBeenCalled();
+
+      const warningOutput = warnings.mock.calls.flat().map(String);
+      expect(warningOutput.some((message) => message.includes("Bytecode validation incomplete")))
+        .toBe(true);
+      expect(warningOutput).toContain("\u001b[33m\nValidation completed with warnings.\n\u001b[39m");
+      expect(logs.mock.calls.flat().map(String)).not.toContain(
+        "\u001b[32m\nValidation passed.\n\u001b[39m",
       );
     } finally {
       resolver.mockRestore();

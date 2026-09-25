@@ -41,7 +41,7 @@ function setup() {
 }
 
 describe("BytecodeValidationModule", () => {
-  it("uses Loupe facet addresses and one pinned block", async () => {
+  it("uses Diamond introspection and one pinned block", async () => {
     const { ctx, rpc, validator } = setup();
     const result = await BytecodeValidationModule.validateDeployment(ctx, { rpc, validator });
 
@@ -53,6 +53,22 @@ describe("BytecodeValidationModule", () => {
     expect(rpc.getCode).toHaveBeenCalledWith(facet, 100n);
     expect(validator.validate).toHaveBeenCalledOnce();
     expect(result.state.bytecodeDeploymentValidation.success).toBe(true);
+  });
+
+  it("reports introspection errors without blocking validation", async () => {
+    const { ctx, rpc, validator } = setup();
+    vi.mocked(rpc.readContract).mockRejectedValue(new Error("packed selectors are invalid"));
+
+    const result = await BytecodeValidationModule.validateDeployment(ctx, { rpc, validator });
+    const state = result.state.bytecodeDeploymentValidation;
+
+    expect(state.success).toBe(true);
+    expect(state.result).toMatchObject({
+      complete: false,
+      introspectionError: "packed selectors are invalid",
+      facets: [],
+    });
+    expect(validator.validate).not.toHaveBeenCalled();
   });
 
   it("blocks only when the validator proves a collision", async () => {
@@ -73,16 +89,20 @@ describe("BytecodeValidationModule", () => {
     );
   });
 
-  it("warns without failing when a Loupe facet has no code", async () => {
+  it.each([
+    ["an undefined response", undefined],
+    ["empty runtime bytecode", "0x" as Hex],
+  ])("marks validation incomplete without failing for %s", async (_case, bytecode) => {
     const { ctx, rpc, validator } = setup();
-    vi.mocked(rpc.getCode).mockResolvedValue(undefined);
+    vi.mocked(rpc.getCode).mockResolvedValue(bytecode);
 
     const result = await BytecodeValidationModule.validateDeployment(ctx, { rpc, validator });
     const state = result.state.bytecodeDeploymentValidation;
 
     expect(state.success).toBe(true);
-    expect((state.result as { facets: Array<{ warning: string }> }).facets[0].warning)
-      .toContain("No runtime bytecode");
+    expect(state.result).toMatchObject({ complete: false });
+    expect((state.result as { facets: Array<{ uncertain: string }> }).facets[0].uncertain)
+      .toContain("this facet was not validated");
     expect(validator.validate).not.toHaveBeenCalled();
   });
 

@@ -2,7 +2,7 @@ import { getAddress, type Address } from "viem";
 import type { IBytecodeValidatorAdapter } from "../../adapters/IBytecodeValidatorAdapter/interface";
 import type { IRPCAdapter } from "../../adapters/IRPCAdapter/interface";
 import type { ComposeContext, ModuleState } from "../../context/types";
-import { DIAMOND_LOUPE_ABI } from "../inspect/diamondLoupeAbi";
+import { DIAMOND_INSPECT_ABI } from "../inspect/diamondInspectAbi";
 import type { VirtualStorageLayoutRecord } from "../validation/types";
 import type {
   BytecodeValidationSummary,
@@ -14,7 +14,7 @@ type DeploymentDependencies = {
   validator: IBytecodeValidatorAdapter;
 };
 
-type LoupeFacet = {
+type InspectedFacet = {
   facet: Address;
   functionSelectors: `0x${string}`[];
 };
@@ -41,12 +41,31 @@ export const BytecodeValidationModule = {
     const chainKey = String(ctx.param.chainKey);
     const diamondAddress = getAddress(String(ctx.param.diamondAddress));
     const blockNumber = await dependencies.rpc.getBlockNumber();
-    const rawFacets = await dependencies.rpc.readContract<LoupeFacet[]>({
-      address: diamondAddress,
-      abi: DIAMOND_LOUPE_ABI,
-      functionName: "facets",
-      blockNumber,
-    }, { verifyCode: true });
+    let rawFacets: InspectedFacet[];
+    try {
+      rawFacets = await dependencies.rpc.readContract<InspectedFacet[]>({
+        address: diamondAddress,
+        abi: DIAMOND_INSPECT_ABI,
+        functionName: "facets",
+        blockNumber,
+      }, { verifyCode: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Diamond introspection failed.";
+      ctx.state.bytecodeDeploymentValidation = {
+        success: true,
+        result: {
+          diamondName,
+          chainKey,
+          diamondAddress,
+          blockNumber,
+          complete: false,
+          introspectionError: message,
+          facets: [],
+        },
+        error: null,
+      };
+      return ctx;
+    }
     const facetAddresses = [...new Set(rawFacets.map((facet) => getAddress(facet.facet)))];
     const records = validatorRecords(storageRecords(ctx));
     const facets = [];
@@ -58,7 +77,7 @@ export const BytecodeValidationModule = {
           facets.push({
             address,
             report: null,
-            warning: `No runtime bytecode found at ${address}.`,
+            uncertain: `Runtime bytecode was unavailable at pinned block ${blockNumber}; this facet was not validated.`,
             error: null,
           });
           continue;
@@ -70,14 +89,14 @@ export const BytecodeValidationModule = {
             bytecode,
             virtualStorageLayout: { records },
           }),
-          warning: null,
+          uncertain: null,
           error: null,
         });
       } catch (error) {
         facets.push({
           address,
           report: null,
-          warning: null,
+          uncertain: null,
           error: error instanceof Error ? error.message : "Facet bytecode validation failed.",
         });
       }
@@ -88,6 +107,8 @@ export const BytecodeValidationModule = {
       chainKey,
       diamondAddress,
       blockNumber,
+      complete: facets.every((facet) => facet.uncertain === null),
+      introspectionError: null,
       facets,
     };
     const collisions = facets.flatMap((facet) => facet.report?.collisions ?? []);
@@ -121,6 +142,7 @@ export const BytecodeValidationModule = {
     const failed = deployments.find((deployment) => !deployment.success);
     const result: BytecodeValidationSummary = {
       skipped,
+      complete: deployments.every((deployment) => deployment.result?.complete !== false),
       deployments: deployments.flatMap((deployment) => deployment.result ? [deployment.result] : []),
       failures: children.flatMap((child, index) => {
         const deployment = deployments[index];

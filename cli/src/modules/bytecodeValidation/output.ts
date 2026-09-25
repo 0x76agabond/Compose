@@ -22,6 +22,12 @@ export function showBytecodeValidationReport(ctx: ComposeContext): void {
 
   for (const deployment of state.result?.deployments ?? []) {
     const scope = `${deployment.diamondName} / ${deployment.chainKey}`;
+    if (deployment.introspectionError) {
+      console.error(red("\nDiamond introspection error"));
+      console.error(`${scope} / ${deployment.diamondAddress}`);
+      console.error(`  ${deployment.introspectionError}`);
+      continue;
+    }
     for (const facet of deployment.facets) {
       if (facet.error) {
         console.error(red("\nBytecode validation failed"));
@@ -29,10 +35,10 @@ export function showBytecodeValidationReport(ctx: ComposeContext): void {
         console.error(`  ${facet.error}`);
         continue;
       }
-      if (facet.warning) {
-        console.warn(yellow(`\nBytecode validation warning`));
+      if (facet.uncertain) {
+        console.warn(yellow(`\nBytecode validation incomplete`));
         console.warn(`${scope} / ${facet.address}`);
-        console.warn(`  ${facet.warning}`);
+        console.warn(`  ${facet.uncertain}`);
         continue;
       }
       if (!facet.report) continue;
