@@ -1,5 +1,8 @@
 import { getAddress, type Address } from "viem";
-import type { IBytecodeValidatorAdapter } from "../../adapters/IBytecodeValidatorAdapter/interface";
+import type {
+  BytecodeValidationReport,
+  IBytecodeValidatorAdapter,
+} from "../../adapters/IBytecodeValidatorAdapter/interface";
 import type { IRPCAdapter } from "../../adapters/IRPCAdapter/interface";
 import type { ComposeContext, ModuleState } from "../../context/types";
 import { DIAMOND_INSPECT_ABI } from "../inspect/diamondInspectAbi";
@@ -29,6 +32,42 @@ function validatorRecords(records: VirtualStorageLayoutRecord[]) {
     parentVirtualPath: record.parentVirtualPath ?? undefined,
     structName: record.structName ?? undefined,
   }));
+}
+
+function sourceNamesForPath(
+  virtualPath: string | undefined,
+  records: VirtualStorageLayoutRecord[],
+): string[] {
+  if (!virtualPath) return [];
+  const matches = records.filter((record) =>
+    virtualPath === record.virtualPath || virtualPath.startsWith(`${record.virtualPath}.`));
+  const longestPath = Math.max(0, ...matches.map((record) => record.virtualPath.length));
+  return [...new Set(
+    matches
+      .filter((record) => record.virtualPath.length === longestPath)
+      .map((record) => record.sourceName),
+  )];
+}
+
+function addVslSourceNames(
+  report: BytecodeValidationReport,
+  records: VirtualStorageLayoutRecord[],
+): BytecodeValidationReport {
+  return {
+    ...report,
+    collisions: report.collisions.map((collision) => ({
+      ...collision,
+      sourceNames: sourceNamesForPath(collision.virtualPath, records),
+    })),
+    validatedVariables: report.validatedVariables.map((variable) => ({
+      ...variable,
+      sourceNames: sourceNamesForPath(variable.virtualPath, records),
+    })),
+    uncertainScopes: report.uncertainScopes.map((scope) => ({
+      ...scope,
+      sourceNames: sourceNamesForPath(scope.virtualPath, records),
+    })),
+  };
 }
 
 /** Validates all current facets of one deployed diamond at one pinned block. */
@@ -85,10 +124,13 @@ export const BytecodeValidationModule = {
 
         facets.push({
           address,
-          report: dependencies.validator.validate({
-            bytecode,
-            virtualStorageLayout: { records },
-          }),
+          report: addVslSourceNames(
+            dependencies.validator.validate({
+              bytecode,
+              virtualStorageLayout: { records },
+            }),
+            storageRecords(ctx),
+          ),
           uncertain: null,
           error: null,
         });

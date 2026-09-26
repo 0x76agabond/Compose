@@ -11,6 +11,7 @@ export type BytecodeStorageLocation = {
 export type BytecodeStorageCollision = {
   location: BytecodeStorageLocation;
   virtualPath: string;
+  sourceNames?: string[];
   expectedType: string;
   observedType: string;
   reason: string;
@@ -19,6 +20,7 @@ export type BytecodeStorageCollision = {
 export type BytecodeValidatedVariable = {
   location: BytecodeStorageLocation;
   virtualPath: string;
+  sourceNames?: string[];
   expectedType: string;
   observedType: string;
 };
@@ -26,6 +28,7 @@ export type BytecodeValidatedVariable = {
 export type BytecodeUncertainScope = {
   location: BytecodeStorageLocation;
   virtualPath?: string;
+  sourceNames?: string[];
   reason: string;
 };
 

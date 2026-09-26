@@ -73,6 +73,20 @@ describe("BytecodeValidationModule", () => {
 
   it("blocks only when the validator proves a collision", async () => {
     const { ctx, rpc, validator } = setup();
+    ctx.param.virtualStorageRecords = [{
+      id: "0x01",
+      virtualPath: "example.storage",
+      parentVirtualPath: null,
+      kind: "normal",
+      codeWidth: 1,
+      layout: ["0x2f"],
+      serializedLayout: ["0x01", "0x2f"],
+      slots: [[256]],
+      source: "erc8042",
+      sourceName: "src/ExampleFacet.sol",
+      contractName: "ExampleFacet",
+      structName: "Storage",
+    }];
     vi.mocked(validator.validate).mockReturnValue(report([{
       location: { slot: "0", offset: 0, selector: "12345678", symbolicPath: "slot(0)" },
       virtualPath: "example.storage",
@@ -87,6 +101,9 @@ describe("BytecodeValidationModule", () => {
     expect(result.state.bytecodeDeploymentValidation.error?.code).toBe(
       "BYTECODE_STORAGE_COLLISION_DETECTED",
     );
+    expect(result.state.bytecodeDeploymentValidation.result).toMatchObject({
+      facets: [{ report: { collisions: [{ sourceNames: ["src/ExampleFacet.sol"] }] } }],
+    });
   });
 
   it.each([

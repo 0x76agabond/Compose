@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { BytecodeValidatorAdapter } from "../../../src/adapters/IBytecodeValidatorAdapter/adapter";
+import {
+  BytecodeValidatorAdapter,
+  formatSymbolicStoragePath,
+} from "../../../src/adapters/IBytecodeValidatorAdapter/adapter";
 
 describe("BytecodeValidatorAdapter", () => {
   it("runs the packaged WASM validator through the CLI boundary", () => {
@@ -15,5 +18,11 @@ describe("BytecodeValidatorAdapter", () => {
       diagnostics: expect.any(Array),
       delegatecallWarnings: expect.any(Array),
     });
+  });
+
+  it("formats plain byte-array slots as readable hex", () => {
+    expect(formatSymbolicStoragePath(
+      "Plain([208, 192, 207, 159, 68, 4, 30, 38, 148, 81, 176, 16, 155, 218, 207, 239, 134, 70, 39, 202, 210, 195, 121, 156, 43, 94, 12, 108, 34, 175, 0, 119])",
+    )).toBe("Plain(0xd0c0cf9f44041e269451b0109bdacfef864627cad2c3799c2b5e0c6c22af0077)");
   });
 });

@@ -111,9 +111,15 @@ describe("validate pipeline", () => {
         },
       }));
       expect(rpc.getCode).toHaveBeenCalledWith(facetAddress, 100n);
-      expect(warnings.mock.calls.flat().map(String)).toContain(
+      const warningOutput = warnings.mock.calls.flat().map(String);
+      expect(warningOutput).toContain(
         "\u001b[33m  Scoped evidence is incomplete.\u001b[39m",
       );
+      expect(warningOutput).toContain("  compose.fixture.virtual-storage");
+      const reasonIndex = warningOutput.findIndex((line) => line.includes("Scoped evidence is incomplete."));
+      const pathIndex = warningOutput.findIndex((line) => line.includes("compose.fixture.virtual-storage"));
+      expect(reasonIndex).toBeGreaterThan(-1);
+      expect(reasonIndex).toBeLessThan(pathIndex);
     } finally {
       resolver.mockRestore();
       warnings.mockRestore();
@@ -200,12 +206,22 @@ describe("validate pipeline", () => {
       const result = await ValidatePipeline.execute(harness.ctx);
       expect(result.state.validatePipeline?.success).toBe(false);
       expect(result.status.failedAt).toBe("validatePipeline");
-      expect(errors.mock.calls.flat().map(String)).toEqual(expect.arrayContaining([
+      const output = errors.mock.calls.flat().map(String);
+      expect(output).toEqual(expect.arrayContaining([
         "  compose.fixture.virtual-storage",
         "  Expected: uint256",
         "  Observed: address",
         "  PC: 42",
       ]));
+      expect(output).toContain("  Affected:");
+      expect(output.some((line) => line.startsWith("    - ") && line.includes("FullStorageFacet.sol")))
+        .toBe(true);
+      expect(output.some((line) => line.startsWith("    - ") && line.includes("CompatibleStorageFacet.sol")))
+        .toBe(true);
+      const reasonIndex = output.findIndex((line) => line.includes("type mismatch"));
+      const pathIndex = output.indexOf("  compose.fixture.virtual-storage");
+      expect(reasonIndex).toBeGreaterThan(-1);
+      expect(reasonIndex).toBeLessThan(pathIndex);
     } finally {
       resolver.mockRestore();
       errors.mockRestore();
